@@ -10,49 +10,40 @@ package ir;
 
 import java.io.Serializable;
 import java.util.LinkedList;
+import java.util.ArrayList;
 
 public class PostingsEntry implements Comparable<PostingsEntry>, Serializable {
     
     public int docID;
     public double score;
-    /** The postings in a document as a linked list. */
-    private LinkedList<Integer> pos;
+    public double score_tfidf;
+    public double[] tfidf_vect;
+    public LinkedList<Integer> offsets;
 
+    PostingsEntry() {
+        this.offsets = new LinkedList<Integer>();
+    }
 
-    public PostingsEntry(int docID) {
-    	this.docID = docID;
-    	this.score = 1;
-    	this.pos = new LinkedList<Integer>();
+    PostingsEntry(int docID) {
+        this.docID = docID;
+        this.offsets = new LinkedList<Integer>();
     }
-    
-    public PostingsEntry(int docID,  LinkedList<Integer> pos) {
-    	this.docID = docID;
-    	this.pos = pos;
-    	this.score = 1;
+
+    PostingsEntry(int docID, double score) {
+        this.docID = docID;
+        this.offsets = new LinkedList<Integer>();
     }
-    
-    public PostingsEntry(int docID, int posting) {
-    	this.docID = docID;
-    	LinkedList<Integer> liste = new LinkedList<Integer>();
-    	liste.add(posting);
-    	this.pos = liste;
-    	this.score = 1;
+
+    public PostingsEntry clone() {
+        PostingsEntry pe = new PostingsEntry();
+        pe.docID = this.docID;
+        pe.score = this.score;
+        pe.score_tfidf = this.score_tfidf;
+        pe.tfidf_vect = this.tfidf_vect; // Shallow copy for tfidf_vect
+        pe.offsets = this.offsets; // Shallow copy for offsets, its okay
+
+        return pe;
     }
-    
-    public PostingsEntry(int docID,  LinkedList<Integer> list, double score) {
-    	this.docID = docID;
-    	this.pos = list;
-    	this.score = score;
-    }
-    
-    public PostingsEntry(int docID, int posting, double score) {
-    	this.docID = docID;
-    	LinkedList<Integer> liste = new LinkedList<Integer>();
-    	liste.add(posting);
-    	this.pos = liste;
-    	this.score = score;
-    }
-    
 
     /**
      *  PostingsEntries are compared by their score (only relevant 
@@ -62,72 +53,41 @@ public class PostingsEntry implements Comparable<PostingsEntry>, Serializable {
      *  descending order.
      */
     public int compareTo( PostingsEntry other ) {
-	return Double.compare( other.score, score );
+        return Double.compare( other.score, score );
     }
 
-    public int getDocID() {
-    	return docID;
+    @Override
+    public boolean equals(Object e) {
+        return ((PostingsEntry)e).docID == this.docID;
     }
 
-    public double getScore() {
-    	return score;
-    }
-    
-    public LinkedList<Integer> getPos() {
-    	return pos;
+    @Override
+    public int hashCode() {
+        return this.docID;
     }
 
-    public int getPos(int i) {
-    	return pos.get(i);
+    public int size() {
+        return this.offsets.size();
     }
 
-    public int getFirstPos() {
-    	return pos.getFirst();
+    public int get(int i) {
+        return this.offsets.get(i);
     }
 
-    public int getSizePos() {
-    	return pos.size();
+    public void println() {
+        System.out.print(this.docID + ":");
+        for(int o : this.offsets) {
+            System.out.print(o + ",");
+        }
+        System.out.println();
     }
 
-    public void changePos(LinkedList<Integer> liste) {
-    	pos = liste;
-    }
+    public double tfidf(int docCount) {
+        double docLength = Index.docLengths.get(((Integer)this.docID).toString()); 
+        double tf = this.size() / docLength;
+        double idf = Index.docIDs.size() / docCount;
 
-    //Adding a position at the correction position
-    public void addPos(int position) {
-    	int temp = 0;
-    	while (temp < this.getSizePos() && pos.get(temp) < position) {
-    		temp++;
-    	}
-    	pos.add(temp,position);
-    }
-    
-    public boolean hasPos(int pos) {
-    	boolean result = false;
-    	int temp = 0;
-		while (!result && temp < this.getSizePos()) {
-			if (this.getPos(temp) == pos) {
-				result = true;
-			}
-			temp++;
-		}
-		return result;
-    }
-    
-    public void mergePos(LinkedList<Integer> postingsPositions) {
-    	for (int k=0; k < postingsPositions.size();k++) {
-			if (!this.hasPos(postingsPositions.get(k))){
-				this.addPos(postingsPositions.get(k));
-			}
-		}
-    }
-    
-    public void deleteFirstPos() {
-    	pos.removeFirst();
-    }
-
-    public void changeScore(double score) {
-    	this.score = score;
+        return tf * Math.log(idf);
     }
 }
 

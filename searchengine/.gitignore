@@ -4,3 +4,8 @@
 
 # Java binaries directory
 target
+
+# Data
+myFiles
+Metadata
+savedindex

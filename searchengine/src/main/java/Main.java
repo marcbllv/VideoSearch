@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.List;
 import java.util.LinkedList;
 import java.util.Collections;
+import java.util.Iterator;
 
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -37,18 +38,27 @@ public class Main {
                 PostingsList res = sw.search();
 
                 List<Video> videos = new LinkedList<Video>();
-                for(PostingsEntry pe: res.getList()) {
+                int i = 0;
+                for(Iterator<PostingsEntry> itRes = res.list.iterator() ; itRes.hasNext() && i < 10 ; i++) {
+                    PostingsEntry pe = itRes.next();
 					//Finding the "BEST" time of the video if there are several 
-					int offs = pe.getFirstPos();
-					if (pe.getSizePos() > 1 ) {
+                    int offs = pe.offsets.getFirst();
+
+					if (pe.offsets.size() > 1) {
 						LinkedList<Integer> closeFrames = new LinkedList<Integer>();
-						double lengthFrame = Index.docTimeFrame.get("" + pe.docID);
+
+						double lengthFrame = 0;
+                        try{
+                            lengthFrame = Index.docTimeFrame.get("" + pe.docID);
+                        } catch(Exception e) {
+                            lengthFrame = 0;
+                        }
 						
-						for (int k = 0; k < pe.getSizePos() ; k++){
+						for (int k = 0; k < pe.offsets.size() ; k++){
 							int count = 0;
 							int timePosition = 0;
-							while (timePosition < pe.getSizePos() && pe.getPos(k) + sw.beingClose * lengthFrame > pe.getPos(timePosition)) {
-								if (Math.abs(pe.getPos(k) - pe.getPos(timePosition)) < sw.beingClose * lengthFrame) {
+                            while (timePosition < pe.offsets.size() && pe.offsets.get(k) + sw.beingClose * lengthFrame > pe.offsets.get(timePosition)) {
+                                if (Math.abs(pe.offsets.get(k) - pe.offsets.get(timePosition)) < sw.beingClose * lengthFrame) {
 									count++;
 								}
 								timePosition++;
@@ -56,11 +66,11 @@ public class Main {
 							closeFrames.add(count);
 						}
 						
-						offs = pe.getPos(closeFrames.indexOf(Collections.max(closeFrames)));
+						offs = pe.offsets.get(closeFrames.indexOf(Collections.max(closeFrames)));
 					}
 					
                     String videoPath = Index.docIDs.get(String.valueOf(pe.docID));
-                    String videoName = videoPath.substring(8, videoPath.length() - 6);
+                    String videoName = videoPath.substring(10, videoPath.length() - 2);
                     Video v = new Video(videoName, offs);
 
                     videos.add(v);
