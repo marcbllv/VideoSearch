@@ -7,17 +7,15 @@
 
 package ir;
 
-import java.util.LinkedList;
-import java.util.ArrayList;
-import java.util.StringTokenizer;
-import java.util.ListIterator;
+import java.io.IOException;
+import java.io.File;
+import java.util.HashMap;
 import java.util.Iterator;
-import java.util.Map;
+import java.util.LinkedList;
+import java.util.Set;
+import java.util.StringTokenizer;
 
 public class Query {
-
-    public static final double alpha = 1.0;
-    public static final double beta  = 1.0;
     
     public LinkedList<String> terms = new LinkedList<String>();
     public LinkedList<Double> weights = new LinkedList<Double>();
@@ -32,26 +30,11 @@ public class Query {
      *  Creates a new Query from a string of words
      */
     public Query( String queryString  ) {
-        StringTokenizer tok = new StringTokenizer( queryString );
-        while ( tok.hasMoreTokens() ) {
-            terms.add( tok.nextToken() );
-            weights.add( new Double(1) );
-        }    
-    }
-
-    /**
-     * Print terms and weights
-     */
-    public void print() {
-        ListIterator<String> itTerms = this.terms.listIterator();
-        ListIterator<Double> itWeigh = this.weights.listIterator();
-
-        System.out.println();
-        System.out.println("Current query:");
-        while(itTerms.hasNext()) {
-            System.out.println(itWeigh.next() + "   " + itTerms.next());
-        }
-        System.out.println();
+	StringTokenizer tok = new StringTokenizer( queryString );
+	while ( tok.hasMoreTokens() ) {
+	    terms.add( tok.nextToken() );
+	    weights.add( new Double(1) );
+	}    
     }
     
     /**
@@ -65,117 +48,108 @@ public class Query {
      *  Returns a shallow copy of the Query
      */
     public Query copy() {
-        Query queryCopy = new Query();
-        queryCopy.terms = (LinkedList<String>) terms.clone();
-        queryCopy.weights = (LinkedList<Double>) weights.clone();
-        return queryCopy;
+	Query queryCopy = new Query();
+	queryCopy.terms = (LinkedList<String>) terms.clone();
+	queryCopy.weights = (LinkedList<Double>) weights.clone();
+	return queryCopy;
     }
-
-    /**
-     * Normalize weights vector to 1
-     */
-    public void normalize() {
-        double norm = .0;
-        for(Double d: this.weights) {
-            norm += d * d;
-        }
-        norm = Math.sqrt(norm);
-        for(ListIterator<Double> it = this.weights.listIterator() ; it.hasNext() ; ) {
-            it.set(it.next() / norm);
-        }
-    }
-
+    
     /**
      *  Expands the Query using Relevance Feedback
      */
-    public void relevanceFeedback( PostingsList results, boolean[] docIsRelevant, Indexer indexer ) {
-        ArrayList<Double> relevantSum = new ArrayList<Double>(this.size());
-        Double s;
-        int relevantCount = 0;
+    public void relevanceFeedback( PostingsList results, boolean[] docIsRelevant, Index index, double alpha, double beta, double thresholdProbability, boolean extended) {
+	//Initialization of the variables
+	HashMap<String,Double> termScores=new HashMap<String,Double>();
 
-        // Normalizing query & multiplication by alpha:
-        this.normalize();
-        ListIterator<Double> qW = this.weights.listIterator();
-        while(qW.hasNext()) {
-            qW.set(Query.alpha * qW.next());
-        }
+	//Calculate the number of relevant documents
+	int nbRelevantDocs=0;
+	int loops = 0;
+	for(int i=0;i<docIsRelevant.length;i++){
+		if(docIsRelevant[i]){
+			nbRelevantDocs++;
+			loops++;
+		}
+	}
+	
+	int nbDocs=index.docIDs.size();
+	
+	int i =0;
+	while (loops>0){
+		if(docIsRelevant[i]){
+			loops--;
+			//Get file
+			int docID=results.get(i).docID;
+			String docPath=index.docIDs.get(Integer.toString(docID));
 
-        this.print();
+			//Read the file
+			File f=new File(docPath);
+			SimpleTokenizer tok = Indexer.getFileText(f, thresholdProbability, extended);
 
-        for(int i = 0 ; i < 10 ; i++) {
-            relevantCount += docIsRelevant[i] ? 1 : 0;
-        }
+			LinkedList<String> termsText = new LinkedList<String>();
 
-        for(int i = 0 ; i < 10 ; i++) {
-            if(results.get(i) == null) {
-                break; // less than 10 results
-            }
+			try {
+				while ( tok.hasMoreTokens() ) {
+					//Look at all the terms of the text
+					String term=tok.nextToken();
 
-            Query docVect = this.copy();
+					if (!termsText.contains(term)) {
+						termsText.add(term);
+						PostingsList postingsList=index.getPostings(term);
+						if (postingsList != null) {
+							double termIDF=Math.log((double)nbDocs/(double)postingsList.size());
+	
+							for (int j =0; j< postingsList.size(); j++) {
+								if(postingsList.get(j).docID==docID){
+									//Calculate the tf_idf score for the term
+									int tf = postingsList.get(j).getSizePos();
+									double tf_idf=tf*termIDF;
+									int docLength=index.docLengths.get(Integer.toString(docID));
+									double finalScore=tf_idf/(double)docLength;
+	
+									//Multiply with beta and divide by number of relevant
+									finalScore=(finalScore*beta)/(double)nbRelevantDocs;
+									termScores.put(term,finalScore);
+									break;
+								}
+							}
+						}
+					}
+				}
+			} catch (IOException e) {
+				e.printStackTrace();
+			} 
+		}
+		i++;
+	}
 
-            if(docIsRelevant[i]) {
-                System.out.println("Doc " + results.get(i).docID + " is relevant!");
-                int docID = results.get(i).docID;
+	//For all terms that were in previous query, add their weigth
+	for (int j =0;j<terms.size();j++) {
+		double newScore =0;
+		if (termScores.get(terms.get(j)) == null) {
+			newScore=weights.get(j)*alpha;
+		}
+		else {
+			newScore=weights.get(j)*alpha+termScores.get(terms.get(j));
+		}
+		termScores.put(terms.get(j),newScore);
+	}
 
-                // Reseting new docVector
-                ListIterator<Double> dvWeights = docVect.weights.listIterator();
-                while(dvWeights.hasNext()) {
-                    dvWeights.next();
-                    dvWeights.set(0.0);
-                }
+	//Clear the old term and weight lists
+	terms.clear();
+	weights.clear();
 
-                // Looping through index to build document vector
-                for(Map.Entry<String, PostingsList> w: Index.index.entrySet()) {
-                    for(PostingsEntry pe: w.getValue().list) {
-                        if(pe.docID == docID) {
-                            if(docVect.terms.contains(w.getKey())) {
-                                Iterator<String> dvT = docVect.terms.iterator();
-                                ListIterator<Double> dvW = docVect.weights.listIterator();
-                                while(dvT.hasNext()) {
-                                    dvW.next();
-                                    if(dvT.next().equals(w.getKey())) {
-                                        dvW.set(pe.score_tfidf);
-                                        break;
-                                    }
-                                }
-                            } else {
-                                docVect.terms.add(w.getKey());
-                                docVect.weights.add(pe.score_tfidf);
-                                this.terms.add(w.getKey());
-                                this.weights.add(0.0);
-                            }
-                        } else if(pe.docID > docID) {
-                            break;
-                        }
-                    }
-                }
+	//Then add the new terms and their weights
+	Set<String> newTerms=termScores.keySet();
+	int nbTerms=termScores.keySet().size();
+	for(String newTerm:newTerms){
+		double termScore=termScores.get(newTerm);
+		//Normalize it
+		termScore=termScore/(double)nbTerms;
+		//Add term and weight
+		terms.add(newTerm);
+		weights.add(termScore);
+	}
 
-                // Normalizing docVect:
-                docVect.normalize();
-
-                System.out.println("Here is the doc vector:");
-                Iterator<String> dvT = docVect.terms.iterator();
-                Iterator<Double> dvW = docVect.weights.iterator();
-                while(dvT.hasNext()) {
-                    System.out.println(dvW.next() + "    " + dvT.next());
-                }
-
-                // Adding to previous query:
-                ListIterator<Double> docWeights = docVect.weights.listIterator();
-                ListIterator<Double> queryWeights  = this.weights.listIterator();
-                while(queryWeights.hasNext()) {
-                    double d = queryWeights.next();
-                    queryWeights.set(d + Query.beta * docWeights.next() / relevantCount);
-                }
-            }
-        }
-
-        System.out.println("Final query, " + this.terms.size() + " elements:");
-        Iterator<String> queryTerms = this.terms.iterator();
-        Iterator<Double> queryWeights  = this.weights.iterator();
-        while(queryTerms.hasNext()) {
-            System.out.println(queryWeights.next() + "    " + queryTerms.next());
-        }
     }
 }
 

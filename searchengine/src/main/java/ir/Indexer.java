@@ -4,86 +4,93 @@
  * 
  *   First version:  Johan Boye, 2010
  *   Second version: Johan Boye, 2012
+ *   Third version: Laura Jacquemod, 2015
  */  
 
 
 package ir;
-
 import java.io.File;
-import java.io.Reader;
 import java.io.FileReader;
-import java.io.StringReader;
-import java.io.BufferedReader;
-import java.io.FileInputStream;
-import java.io.InputStreamReader;
 import java.io.IOException;
-import java.util.LinkedList;
+import java.io.Reader;
+import java.io.StringReader;
 
+//Reading JSON files
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
+
 /**
  *   Processes a directory structure and indexes all PDF and text files.
  */
 public class Indexer {
+	
+    //For bigram and therefore subphrase, too much memory to index all texts
+    //Choosing which texts (get ID) to index
+    private int startDoc = 000;
+    private int stopDoc = 1500;
+    /*
+    public int nbDocsReturned=20;
+    public double subphraseScale=4;*/
 
-    /** The index to be built up by this indexer. */
-    public Index index;
+	/** The index to be built up by this indexer. */
+	public Index index;
+	public Index longIndex;
 
-    public static final double THRESHOLD_PROBA = -10.0;
-
-    /** The next docID to be generated. */
-    private int lastDocID = 0;
-
-    /** Generates a new document identifier as an integer. */
-    private int generateDocID() {
-        return lastDocID++;
-    }
-
-    /** Generates a new document identifier based on the file name. */
-    private int generateDocID( String s ) {
-        return s.hashCode();
-    }
-
-
-    /* ----------------------------------------------- */
+	/** The next docID to be generated. */
+	private int lastDocID = 0;
+	
+	/* ----------------------------------------------- */
 
 
-    /**
-     *  Initializes the index as a HashedIndex.
-     */
-    public Indexer() {
-        index = new HashedIndex();
-    }
+	/** Generates a new document identifier as an integer. */
+	private int generateDocID() {
+		return lastDocID++;
+	}
 
 
-    /* ----------------------------------------------- */
+	/* ----------------------------------------------- */
 
 
-    /**
-     *  Tokenizes and indexes the file @code{f}. If @code{f} is a directory,
-     *  all its files and subdirectories are recursively processed.
-     */
-    public void processFiles( File f ) {
-        // do not try to index fs that cannot be read
-        if ( f.canRead() ) {
-            if ( f.isDirectory() ) {
-                String[] fs = f.list();
-                // an IO error could occur
-                if ( fs != null ) {
-                    for ( int i=0; i<fs.length; i++ ) {
-                        processFiles( new File( f, fs[i] ));
-                    }
-                }
-            } else {
-                // First register the document and get a docID
-                int docID = generateDocID();
-                Index.docIDs.put( "" + docID, f.getPath() );
-                try {
-                    int length = 0;
+	/**
+	 *  Initializes the index as a HashedIndex.
+	 */
+	public Indexer() {
+		index = new HashedIndex();
+		longIndex = new HashedIndex();
+	}
 
+
+	/* ----------------------------------------------- */
+
+
+	/**
+	 *  Tokenizes and indexes the file @code{f}. If @code{f} is a directory,
+	 *  all its files and subdirectories are recursively processed.
+	 */
+	public void processFiles( File f, double thresholdProbability ) {
+		// do not try to index fs that cannot be read
+		if ( f.canRead() ) {
+			if ( f.isDirectory() ) {
+				String[] fs = f.list();
+				// an IO error could occur
+				if ( fs != null ) {
+					for ( int i=0; i<fs.length; i++ ) {
+						processFiles( new File( f, fs[i] ),thresholdProbability);
+					}
+				}
+			} else {
+				System.err.println( "Indexing " + f.getPath() );
+
+				// First register the document and get a docID
+				int docID = generateDocID();
+				if (docID >= startDoc && docID < stopDoc) {
+				index.docIDs.put( "" + docID, f.getPath() );
+				try {
+					int length = 0 , extendedLength = 0;
+					
 					/***************************************************
 					 *      GETTING INFORMATION FROM JSON FILE         *
 					 *              (file with metadata)               *
@@ -102,16 +109,17 @@ public class Indexer {
 					JSONObject information = (JSONObject) item.get("snippet");
 					
 					String title = (String) information.get("title");
-					String descr = title + " " + (String) information.get("description");
+					title = title + " " + (String) information.get("description");
 					
-					Reader reader = new StringReader(descr);
+					Reader reader = new StringReader(title);
 					
 					SimpleTokenizer tok = new SimpleTokenizer( reader );
 					int tokens = 0;
 					while ( tok.hasMoreTokens() ) {
 						String token = tok.nextToken();
 						//Adding additional information to frame "-1"
-						insertIntoIndex(docID, token, -1);
+						insertIntoIndex(index, docID, token, -1);
+						insertIntoIndex(longIndex, docID, token, -1);
 						tokens++;
 					}
 					length += tokens;
@@ -140,10 +148,10 @@ public class Indexer {
 							//At i=0, t =0, so we have to look at second frame
 							Double time = (Double) frame.get("time [s]");
 							int timeFrame = time.intValue();
-                            Index.docTimeFrame.put( "" + docID, time);
+							index.docTimeFrame.put( "" + docID, time);
 						}
 						
-						if (probability > Indexer.THRESHOLD_PROBA) {
+						if (probability > thresholdProbability) {
 							//If it is sure enough, we had info to index
 							String description = (String) candidate.get("text");
 							reader = new StringReader(description);
@@ -151,16 +159,16 @@ public class Indexer {
 							int Nbframe = time.intValue();
 							
 							//Normal description
-							//tok = new SimpleTokenizer( reader );
-							//tokens = 0;
-							//while ( tok.hasMoreTokens() ) {
-							//	String token = tok.nextToken();
-							//	insertIntoIndex(docID, token, Nbframe);
-							//	tokens++;
-							//}
-							//
-							//length += tokens;
-							//reader.close();
+							tok = new SimpleTokenizer( reader );
+							tokens = 0;
+							while ( tok.hasMoreTokens() ) {
+								String token = tok.nextToken();
+								insertIntoIndex(index, docID, token, Nbframe);
+								tokens++;
+							}
+							
+							length += tokens;
+							reader.close();
 							
 							//Extended description
 							String extended = (String) frame.get("extended");
@@ -169,31 +177,84 @@ public class Indexer {
 							tokens = 0;
 							while ( tok.hasMoreTokens() ) {
 								String token = tok.nextToken();
-								insertIntoIndex(docID, token, Nbframe);
+								insertIntoIndex(longIndex, docID, token, Nbframe);
 								tokens++;
 							}
-							length += tokens;
+							extendedLength += tokens;
 							reader.close();
 						}
 					}
-					Index.docLengths.put( "" + docID, length );
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-        }
-    }
+					index.docLengths.put( "" + docID, length );
+					index.docLengthsExtended.put( "" + docID, extendedLength);
+				}
+				catch ( IOException e ) {
+					e.printStackTrace();
+				} catch (ParseException e) {
+					e.printStackTrace();
+				}
+			}
+			}
+		}
+	}
 
-    /**
-     *  Indexes one token.
-     */
-    public void insertIntoIndex( int docID, String token, int offset ) {
-        index.insert( token, docID, offset );
-    }
+	/**
+	 *  Tokenizes and gets the text of the file @code{f}.
+	 * @throws ParseException 
+	 **/
+	public static SimpleTokenizer getFileText( File f, double thresholdProbability, boolean extended) {
+		if ( f.canRead() ) {
+			try {
+				JSONParser parser = new JSONParser();
+				Object obj = parser.parse(new FileReader(f));
 
-    public void scanFilesTrue() {
-        ((HashedIndex)this.index).scanFilesTrue();
-    }
+				JSONObject jsonObject = (JSONObject) obj;
+
+				JSONArray listFrames = (JSONArray) jsonObject.get("imgblobs");
+				
+				String description = "";
+				for (int i = 0; i < listFrames.size(); ++i) {
+					//Getting the information concerning the frame
+					JSONObject frame = (JSONObject) listFrames.get(i);
+					
+					JSONObject candidate = (JSONObject) frame.get("candidate");
+					double probability = (double) candidate.get("logprob");
+					
+					if (probability > thresholdProbability) {
+						//If it is sure enough, we get info
+						
+						if (extended) {//Extended description
+							description = description + " " + (String) frame.get("extended");
+							}
+						else {
+							description = description + " " + (String) candidate.get("text");
+						}
+					}
+				}
+				Reader reader = new StringReader(description);
+				SimpleTokenizer tok = new SimpleTokenizer( reader );
+				return tok;
+			}
+			catch ( IOException e ) {
+				e.printStackTrace();
+			} catch (ParseException e) {
+				e.printStackTrace();
+			}
+		} 
+		return null;
+	}
+
+
+
+	/* ----------------------------------------------- */
+
+
+	/**
+	 *  Indexes one token.
+	 */
+	public void insertIntoIndex(Index index, int docID, String token, int offset ) {
+		index.insert( token, docID, offset );
+		//biwordIndex.insert( token, docID, offset );
+	}
 
 }
 

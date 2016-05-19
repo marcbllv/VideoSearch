@@ -11,6 +11,8 @@ package ir;
 
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.TreeMap;
+import java.util.LinkedList;
 
 public interface Index {
 
@@ -32,15 +34,24 @@ public interface Index {
     public static final int BIGRAM = 1; 
     public static final int SUBPHRASE = 2; 
 	
+    /* Searching types */
+    public static final int ALLFRAMES = 0; 
+    public static final int CLOSEFRAMES = 1; 
+
     public HashMap<String, String> docIDs = new HashMap<String,String>();
     public HashMap<String,Integer> docLengths = new HashMap<String,Integer>();
-    public HashMap<String,PostingsList> index = new HashMap<String,PostingsList>();
+    public HashMap<String,Integer> docLengthsExtended = new HashMap<String,Integer>();
     public HashMap<String,Double> docTimeFrame = new HashMap<String,Double>();
+    public LinkedList<Double> pageRank = new LinkedList<Double>();
 
-    public void insert( String token, int docID, int offset );
+    public void insert( String token, int docID, int frame);
+    public void insert(String token, PostingsList postings);
     public Iterator<String> getDictionary();
+    public TreeMap<String,PostingsList> order();
     public PostingsList getPostings( String token );
-    public PostingsList search( Query query, int queryType, int rankingType, int structureType );
+    public boolean containsToken (String token);
+    public int getSize();
+    public PostingsList search( Query query, int queryType, int rankingType, int frameType, double weightPopularity, double[] popularityScores, int distanceFrames, boolean optimization, double idf_threshold, boolean addition, double sweight_addition);
     public void cleanup();
 
 }

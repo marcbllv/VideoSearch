@@ -1,11 +1,15 @@
 SRC = ir/*.java
-LIB = lib/json-simple.jar
+LIB = ./target/dependency/json-simple-1.1.1.jar
+BIN = ./target/classes/
 
 all:
-	javac $(SRC) -Xlint:none -encoding latin1 -cp $(LIB)
+	mvn clean install
 
-run:
-	java -cp $(LIB):. ir.SearchGUI -d ./myFiles
+gui:
+	java -cp .:$(LIB):$(BIN) ir.SearchGUI -d ./myFiles
+
+web:
+	heroku local
 
 clean:
 	rm -f ir/*.class

@@ -44,7 +44,7 @@ public class SearchWeb {
     private Query query; 
     private PostingsList results; 
     private LinkedList<String> dirNames = new LinkedList<String>();
-    private int queryType = Index.INTERSECTION_QUERY;
+    private int queryType = Index.RANKED_QUERY;
     private int rankingType = Index.TF_IDF;
     private int structureType = Index.UNIGRAM;
     private int frameType = 1;
@@ -55,13 +55,17 @@ public class SearchWeb {
         this.query = new Query(SimpleTokenizer.normalize(query));
     }
 
-    public void index() {
+    public void index(boolean extended) {
         synchronized ( indexLock ) {
             // If no directory specified: try to recover index from files
             if(dirNames.size() == 0) {
                 // Recover the document names and the doc sizes
+                String dirname = "savedindex/";
+                if(extended) {
+                    dirname = "savedindexExtended/";
+                }
                 try {
-                    BufferedReader reader = new BufferedReader(new FileReader("savedindex/__docnames__"));
+                    BufferedReader reader = new BufferedReader(new FileReader(dirname + "__docnames__"));
                     String line;
                     while((line = reader.readLine()) != null) {
                         String[] doc = line.split("\\|");
@@ -69,14 +73,14 @@ public class SearchWeb {
                     }
                     reader.close();
 
-                    reader = new BufferedReader(new FileReader("savedindex/__doclengths__"));
+                    reader = new BufferedReader(new FileReader(dirname + "__doclengths__"));
                     while((line = reader.readLine()) != null) {
                         String[] doc = line.split("\\|");
                         Index.docLengths.put(doc[0], Integer.parseInt(doc[1]));
                     }
                     reader.close();
 
-                    reader = new BufferedReader(new FileReader("savedindex/__doctimeframes__"));
+                    reader = new BufferedReader(new FileReader(dirname + "__doctimeframes__"));
                     while((line = reader.readLine()) != null) {
                         String[] doc = line.split("\\|");
                         Index.docTimeFrame.put(doc[0], Double.parseDouble(doc[1]));
@@ -91,9 +95,11 @@ public class SearchWeb {
                 BufferedReader reader;
                 String line;
 
-                for(int i = 0 ; i < HashedIndex.INDEX_SAVE_N_FILES ; i++) {
+                int INDEX_SAVE_N_FILES = 1000;
+
+                for(int i = 0 ; i < INDEX_SAVE_N_FILES ; i++) {
                     try {
-                        f = new FileReader("savedindex/" + i);
+                        f = new FileReader(dirname + i);
 
                         if(f != null) {
                             reader = new BufferedReader(f);
@@ -110,11 +116,11 @@ public class SearchWeb {
                                     PostingsEntry pe = new PostingsEntry(Integer.parseInt(doc[0]));
 
                                     for(int q = 0 ; q < offsets.length ; q++) {
-                                        pe.offsets.add(Integer.parseInt(offsets[q]));
+                                        pe.getPos().add(Integer.parseInt(offsets[q]));
                                     }
-                                    pl.add(pe);
+                                    pl.addEntry(pe);
                                 }
-                                Index.index.put(tokens[0], pl);
+                                this.indexer.index.insert(tokens[0], pl);
                             }
                         }
                     } catch(FileNotFoundException e) {
@@ -125,21 +131,20 @@ public class SearchWeb {
             } else {
                 for ( int i=0; i<dirNames.size(); i++ ) {
                     File dokDir = new File( dirNames.get( i ));
-                    indexer.processFiles( dokDir );
+                    indexer.processFiles( dokDir, -6.0 );
                 }
             }
 
             // Computing tfidfs
-            HashedIndex.computeAllTfidf();
+            //HashedIndex.computeAllTfidf();
 
             // Computing champions lists
-            HashedIndex.computeChampionsLists();
+            //HashedIndex.computeChampionsLists();
         }
     }
 
     public PostingsList search() {
-        //return indexer.index.search(query, queryType, rankingType, frameType, weightPopularity, 
-        //        popularityScores, distanceFrames, optimization, idf_threshold, addition, weight_addition);
-        return indexer.index.search(query, queryType, rankingType, frameType);
+        return this.indexer.index.search(query, queryType, rankingType, frameType, weightPopularity, 
+                popularityScores, distanceFrames, optimization, idf_threshold, addition, weight_addition);
     }
 }        
